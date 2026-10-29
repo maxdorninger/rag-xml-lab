@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system_specification system_id="SYS-CORE-PLATFORM" environment="production">
+  <metadata>
+    <document_info id="DOC-META">
+      <version>2.5.0</version>
+      <release_date>2026-10-29</release_date>
+      <owner_team>Platform Architecture</owner_team>
+      <schema_revision>rev-15</schema_revision>
+    </document_info>
+  </metadata>
+
+  <services>
+    <service id="SVC-AUTH" tier="critical" protocol="https">
+      <name>Central Identity and Access Management</name>
+      <runtime>
+        <language>python-3.13</language>
+        <framework>FastAPI</framework>
+        <replicas>4</replicas>
+        <cpu_cores>2</cpu_cores>
+        <memory_limit_mb>4096</memory_limit_mb>
+      </runtime>
+      <token_policy>
+        <issuer>https://auth.platform.example.org</issuer>
+        <signing_algorithm>RS256</signing_algorithm>
+        <access_token_ttl_seconds>900</access_token_ttl_seconds>
+        <refresh_token_ttl_days>14</refresh_token_ttl_days>
+        <mfa_policy>mandatory</mfa_policy>
+        <max_failed_attempts>5</max_failed_attempts>
+      </token_policy>
+      <endpoints>
+        <endpoint id="EP-LOGIN" method="POST" path="/v2/auth/login" rate_limit_rpm="120">
+          <description>Authentifiziert Benutzer über OIDC-Credentials und stellt Tokens aus.</description>
+          <auth_required>false</auth_required>
+        </endpoint>
+        <endpoint id="EP-REFRESH" method="POST" path="/v2/auth/refresh" rate_limit_rpm="300">
+          <description>Erneuert abgelaufene Access-Tokens anhand eines gültigen Refresh-Tokens.</description>
+          <auth_required>true</auth_required>
+        </endpoint>
+        <endpoint id="EP-JWKS" method="GET" path="/v2/auth/.well-known/jwks.json" rate_limit_rpm="2000">
+          <description>Veröffentlicht rotierende öffentliche Signaturschlüssel für nachgelagerte Services.</description>
+          <auth_required>false</auth_required>
+        </endpoint>
+        <endpoint id="EP-INTROSPECT" method="POST" path="/v2/auth/introspect" rate_limit_rpm="1500">
+          <description>Prüft Gültigkeit, Scopes und Mandantenzugehörigkeit aktiver Tokens.</description>
+          <auth_required>true</auth_required>
+        </endpoint>
+        <endpoint id="EP-REVOKE" method="POST" path="/v2/auth/revoke" rate_limit_rpm="600">
+          <description>Widerruft kompromittierte Access- und Refresh-Tokens in Echtzeit.</description>
+          <auth_required>true</auth_required>
+        </endpoint>
+      </endpoints>
+    </service>
+
+    <service id="SVC-BILLING" tier="standard" protocol="https">
+      <name>Subscription and Invoice Engine</name>
+      <runtime>
+        <language>kotlin-2.1</language>
+        <replicas>2</replicas>
+        <memory_limit_mb>3072</memory_limit_mb>
+      </runtime>
+      <billing_rules currency="EUR" tax_rate_percent="20.0">
+        <settlement_cycle>monthly</settlement_cycle>
+        <retry_attempts>3</retry_attempts>
+        <webhook_timeout_ms>1500</webhook_timeout_ms>
+      </billing_rules>
+    </service>
+
+    <service id="SVC-SEARCH" tier="high" protocol="grpc">
+      <name>Semantic XML Retrieval Worker</name>
+      <runtime>
+        <language>python-3.13</language>
+        <replicas>4</replicas>
+        <memory_limit_mb>16384</memory_limit_mb>
+      </runtime>
+      <retrieval_config>
+        <embedding_model>BAAI/bge-m3</embedding_model>
+        <reranker_model>jinaai/jina-reranker-v3.5</reranker_model>
+        <top_k_stage1>25</top_k_stage1>
+        <top_n_stage2>3</top_n_stage2>
+        <timeout_ms>250</timeout_ms>
+      </retrieval_config>
+    </service>
+
+    <service id="SVC-AUDIT-LOG" tier="high" protocol="grpc">
+      <name>Immutable Compliance Event Stream</name>
+      <runtime>
+        <language>rust-1.85</language>
+        <replicas>3</replicas>
+        <memory_limit_mb>2048</memory_limit_mb>
+      </runtime>
+      <retention mode="worm" retention_days="2555"/>
+    </service>
+  </services>
+
+  <databases>
+    <database id="DB-IDENTITY" engine="postgresql-17" ha_mode="sync-standby">
+      <storage_gb>250</storage_gb>
+      <backup_retention_days>30</backup_retention_days>
+      <encryption_at_rest>AES-256-GCM</encryption_at_rest>
+    </database>
+
+    <database id="DB-LEDGER" engine="postgresql-17" ha_mode="multi-az">
+      <storage_gb>1000</storage_gb>
+      <backup_retention_days>365</backup_retention_days>
+      <encryption_at_rest>AES-256-GCM</encryption_at_rest>
+    </database>
+
+    <database id="DB-VECTOR" engine="qdrant-1.13" ha_mode="replicated">
+      <storage_gb>1000</storage_gb>
+      <hnsw_m>32</hnsw_m>
+      <hnsw_ef_construct>256</hnsw_ef_construct>
+      <on_disk_payload>true</on_disk_payload>
+    </database>
+  </databases>
+
+  <security_policies>
+    <policy id="POL-GDPR" enforcement="strict">
+      <title>DSGVO-Datenminimierung und Löschfristen</title>
+      <pii_masking_enabled>true</pii_masking_enabled>
+      <max_log_retention_days>14</max_log_retention_days>
+    </policy>
+
+    <policy id="POL-ZERO-TRUST" enforcement="strict">
+      <title>Service-to-Service mTLS Pflicht</title>
+      <mtls_mode>STRICT</mtls_mode>
+      <certificate_rotation_hours>24</certificate_rotation_hours>
+    </policy>
+  </security_policies>
+</system_specification>
+
