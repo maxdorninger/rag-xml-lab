@@ -41,7 +41,7 @@ def chunk_xml_structural(file_path: str, target_depth: int = 2) -> list[Document
     return chunks
 
 
-def chunk_xml_recursive(file_path: str, max_chars: int = 1500) -> list[Document]:
+def chunk_xml_recursive(file_path: str, max_chars: int) -> list[Document]:
     tree = etree.parse(file_path)
     doc_id = Path(file_path).name
 

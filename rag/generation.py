@@ -7,17 +7,15 @@ from pydantic import BaseModel, Field
 
 
 class DiffEntry(BaseModel):
-    position: int = Field(description="1-based line number (File A for Removed, File B for Added/Modified).")
+    position: int = Field(
+        description="1-based line number (File A for Removed, File B for Added/Modified)."
+    )
     status: Literal["Added", "Removed", "Modified"]
     content: str = Field(description="Trimmed XML line without '[Line N]' prefix.")
 
 
-class DiffResult(BaseModel):
-    matched_xpath_b: str | None = Field(
-        default=None,
-        description="XPath of the matching candidate in File B, or None if the block was deleted.",
-    )
-    diffs: list[DiffEntry] = Field(default_factory=list)
+class DiffEntries(BaseModel):
+    entries: list[DiffEntry] = Field(description="A collection of difference entries")
 
 
 DIFF_PROMPT = ChatPromptTemplate.from_messages(
@@ -67,19 +65,17 @@ def compare_xml_chunk(
     query_chunk: Document,
     top_candidates: list[Document],
     llm: ChatOllama,
-) -> DiffResult:
+) -> list[DiffEntry]:
     candidates_xml = "\n\n".join(
         f"Candidate #{i} (XPath: {c.metadata.get('xpath')}):\n```xml\n{_numbered_xml(c)}\n```"
         for i, c in enumerate(top_candidates, start=1)
     )
-    chain = DIFF_PROMPT | llm.with_structured_output(DiffResult)
-    return cast(
-        DiffResult,
-        chain.invoke(
-            {
-                "source_xpath": query_chunk.metadata.get("xpath", ""),
-                "source_xml": _numbered_xml(query_chunk),
-                "candidates_xml": candidates_xml or "(none)",
-            }
-        ),
-    )
+    chain = DIFF_PROMPT | llm.with_structured_output(DiffEntries)
+    result: DiffEntries = chain.invoke(
+        {
+            "source_xpath": query_chunk.metadata.get("xpath", ""),
+            "source_xml": _numbered_xml(query_chunk),
+            "candidates_xml": candidates_xml or "(none)",
+        }
+    )  # ty: ignore[invalid-assignment]
+    return result.entries
